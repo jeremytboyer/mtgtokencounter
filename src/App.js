@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-
+import "./styles.css";
 /* =========================
    TOKEN TYPES
 ========================= */
@@ -209,8 +209,8 @@ export default function Engine() {
      UI
   ========================= */
   return (
-    <div style={{ padding: 20 }}>
-      <h2>MTG Replacement Engine</h2>
+    <div className="App" style={{ padding: 20 }}>
+      <h2>MTG Token Engine</h2>
 
       {/* INPUT */}
       <input
@@ -272,11 +272,11 @@ export default function Engine() {
       {/* STATE */}
       <div style={{ marginTop: 20 }}>
         <h3>Final State</h3>
-        <p>Main: {state.main}</p>
-        <p>Food: {state.food}</p>
-        <p>Clue: {state.clue}</p>
-        <p>Treasure: {state.treasure}</p>
-        <p>Squirrels: {state.squirrel}</p>
+        <p>🪙 Main: {state.main}</p>
+        <p>🍞 Food: {state.food}</p>
+        <p>🔎 Clue: {state.clue}</p>
+        <p>💰 Treasure: {state.treasure}</p>
+        <p>🐿 Squirrels: {state.squirrel}</p>
       </div>
     </div>
   );
