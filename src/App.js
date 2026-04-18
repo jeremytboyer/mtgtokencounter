@@ -1,30 +1,119 @@
 import React, { useState } from "react";
 
-// --- Manual logic layer (still MVP) ---
-const CARD_LOGIC = {
-  "Doubling Season": (state) => {
-    state.main *= 2;
-    return state;
-  },
-  "Parallel Lives": (state) => {
-    state.main *= 2;
-    return state;
-  },
-  "Mondrak, Glory Dominus": (state) => {
-    state.main *= 2;
-    return state;
-  },
-  "Chatterfang, Squirrel General": (state) => {
-    state.squirrels += state.main;
-    return state;
-  },
-  "Peregrin Took": (state) => {
-    state.food += 1;
-    return state;
-  },
+/* =========================
+   TOKEN TYPES
+========================= */
+const T = {
+  MAIN: "Main",
+  FOOD: "Food",
+  CLUE: "Clue",
+  TREASURE: "Treasure",
 };
 
-// --- Scryfall fetch ---
+const create = (type, source) => ({ type, source });
+
+/* =========================
+   ENGINE (UNCHANGED CORE)
+========================= */
+function applyDoublers(amount, battlefield) {
+  let mult = 1;
+
+  for (const c of battlefield) {
+    const n = c.toLowerCase();
+    if (n.includes("doubling season")) mult *= 2;
+    if (n.includes("parallel lives")) mult *= 2;
+  }
+
+  return amount * mult;
+}
+
+function resolveEvent(baseAmount, baseType, battlefield) {
+  let log = [];
+
+  log.push({
+    step: "Start",
+    detail: `${baseAmount} ${baseType} token(s)`,
+  });
+
+  let amount = applyDoublers(baseAmount, battlefield);
+
+  if (amount !== baseAmount) {
+    log.push({
+      step: "Replacement",
+      detail: `Doublers → ${baseAmount} → ${amount}`,
+    });
+  }
+
+  let tokens = [];
+
+  for (let i = 0; i < amount; i++) {
+    tokens.push(create(baseType, "base"));
+  }
+
+  /* Peregrin Took */
+  let extraFood = 0;
+
+  if (battlefield.some((c) => c.toLowerCase().includes("peregrin"))) {
+    extraFood += amount;
+  }
+
+  if (extraFood > 0) {
+    log.push({
+      step: "Replacement",
+      detail: `Peregrin Took → +${extraFood} Food`,
+    });
+  }
+
+  for (let i = 0; i < extraFood; i++) {
+    tokens.push(create(T.FOOD, "peregrin"));
+  }
+
+  /* Academy Manufactor */
+  let final = [];
+  const hasManufactor = battlefield.some((c) =>
+    c.toLowerCase().includes("manufactor")
+  );
+
+  if (hasManufactor) {
+    log.push({
+      step: "Replacement",
+      detail: "Academy Manufactor applied",
+    });
+  }
+
+  for (const t of tokens) {
+    if (
+      hasManufactor &&
+      (t.type === T.FOOD || t.type === T.CLUE || t.type === T.TREASURE)
+    ) {
+      final.push(create(T.CLUE, t.source));
+      final.push(create(T.FOOD, t.source));
+      final.push(create(T.TREASURE, t.source));
+    } else {
+      final.push(t);
+    }
+  }
+
+  tokens = final;
+
+  /* Chatterfang */
+  let squirrels = 0;
+
+  if (battlefield.some((c) => c.toLowerCase().includes("chatterfang"))) {
+    squirrels = tokens.length;
+
+    log.push({
+      step: "Trigger",
+      detail: `Chatterfang → +${squirrels} squirrels`,
+    });
+  }
+
+  return { tokens, squirrels, log };
+}
+
+/* =========================
+   SCRYFALL
+========================= */
 async function fetchCards(query) {
   if (!query) return [];
 
@@ -38,30 +127,42 @@ async function fetchCards(query) {
   return data.data || [];
 }
 
-export default function TokenApp() {
+/* =========================
+   APP
+========================= */
+export default function Engine() {
   const [battlefield, setBattlefield] = useState([]);
-  const [baseTokens, setBaseTokens] = useState(1);
+
+  const [base, setBase] = useState(1);
+  const [type, setType] = useState("Main");
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
 
-  // --- Search Scryfall ---
+  const [log, setLog] = useState([]);
+  const [state, setState] = useState({
+    main: 0,
+    food: 0,
+    clue: 0,
+    treasure: 0,
+    squirrel: 0,
+  });
+
+  /* =========================
+     SEARCH
+  ========================= */
   const handleSearch = async () => {
     const cards = await fetchCards(search);
-    setResults(cards.slice(0, 8)); // limit UI noise
+    setResults(cards.slice(0, 8));
   };
 
-  // --- Add card ---
-  const addCard = (cardName) => {
-    setBattlefield([...battlefield, cardName]);
+  const addCard = (card) => {
+    setBattlefield([...battlefield, card.name]);
   };
 
-  const removeCard = (index) => {
-    const copy = [...battlefield];
-    copy.splice(index, 1);
-    setBattlefield(copy);
-  };
-
+  /* =========================
+     ARROW CONTROLS (RESTORED)
+  ========================= */
   const moveUp = (i) => {
     if (i === 0) return;
     const copy = [...battlefield];
@@ -76,130 +177,106 @@ export default function TokenApp() {
     setBattlefield(copy);
   };
 
-  // --- Calculate ---
-  const calculate = () => {
-    let state = {
-      main: baseTokens,
-      food: 0,
-      squirrels: 0,
-    };
-
-    let steps = [];
-
-    steps.push({
-      label: "Base",
-      state: { ...state },
-    });
-
-    battlefield.forEach((card) => {
-      const before = { ...state };
-
-      if (CARD_LOGIC[card]) {
-        state = CARD_LOGIC[card](state);
-      }
-
-      steps.push({
-        label: card,
-        before,
-        after: { ...state },
-      });
-    });
-
-    return { state, steps };
+  const remove = (i) => {
+    const copy = [...battlefield];
+    copy.splice(i, 1);
+    setBattlefield(copy);
   };
 
-  const { state, steps } = calculate();
+  /* =========================
+     RUN
+  ========================= */
+  const run = () => {
+    const result = resolveEvent(base, type, battlefield);
 
+    const s = {
+      main: 0,
+      food: 0,
+      clue: 0,
+      treasure: 0,
+      squirrel: result.squirrels,
+    };
+
+    for (const t of result.tokens) {
+      s[t.type.toLowerCase()]++;
+    }
+
+    setState(s);
+    setLog(result.log);
+  };
+
+  /* =========================
+     UI
+  ========================= */
   return (
-    <div style={{ padding: 20, fontFamily: "Arial" }}>
-      <h1>MTG Token Engine</h1>
+    <div style={{ padding: 20 }}>
+      <h2>MTG Replacement Engine</h2>
 
-      {/* Base tokens */}
-      <div>
-        <label>Base Tokens: </label>
-        <input
-          type="number"
-          value={baseTokens}
-          onChange={(e) => setBaseTokens(Number(e.target.value))}
-        />
-      </div>
+      {/* INPUT */}
+      <input
+        type="number"
+        value={base}
+        onChange={(e) => setBase(Number(e.target.value))}
+      />
 
-      {/* --- SEARCH UI --- */}
+      <select value={type} onChange={(e) => setType(e.target.value)}>
+        <option>Main</option>
+        <option>Food</option>
+        <option>Clue</option>
+        <option>Treasure</option>
+      </select>
+
+      <button onClick={run}>Run</button>
+
+      {/* SEARCH */}
       <div style={{ marginTop: 20 }}>
-        <h3>Search Cards (Scryfall)</h3>
+        <h3>Scryfall Search</h3>
 
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="e.g. Chatterfang"
-        />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} />
 
         <button onClick={handleSearch}>Search</button>
 
-        <div style={{ marginTop: 10 }}>
-          {results.map((card) => (
-            <div key={card.id} style={{ marginBottom: 5 }}>
-              <strong>{card.name}</strong>
-              <button
-                style={{ marginLeft: 10 }}
-                onClick={() => addCard(card.name)}
-              >
-                Add
-              </button>
-            </div>
-          ))}
-        </div>
+        {results.map((c) => (
+          <div key={c.id}>
+            {c.name}
+            <button onClick={() => addCard(c)}>Add</button>
+          </div>
+        ))}
       </div>
 
-      {/* --- Battlefield --- */}
+      {/* BATTLEFIELD (ARROWS RESTORED) */}
       <div style={{ marginTop: 20 }}>
         <h3>Battlefield</h3>
 
-        {battlefield.length === 0 && <p>No cards yet</p>}
-
-        {battlefield.map((card, i) => (
+        {battlefield.map((c, i) => (
           <div key={i}>
-            {card}
+            {c}
 
-            <button onClick={() => moveUp(i)}>⬆️</button>
-            <button onClick={() => moveDown(i)}>⬇️</button>
-            <button onClick={() => removeCard(i)}>Remove</button>
+            <button onClick={() => moveUp(i)}>⬆</button>
+            <button onClick={() => moveDown(i)}>⬇</button>
+            <button onClick={() => remove(i)}>✖</button>
           </div>
         ))}
       </div>
 
-      {/* --- Breakdown --- */}
+      {/* LOG */}
       <div style={{ marginTop: 20 }}>
-        <h3>Breakdown</h3>
-
-        {steps.map((s, i) => (
+        <h3>Log</h3>
+        {log.map((l, i) => (
           <div key={i}>
-            {s.label === "Base" ? (
-              <strong>Start → {s.state.main} main tokens</strong>
-            ) : (
-              <div>
-                <strong>{s.label}</strong>
-                <div>
-                  Main: {s.before.main} → {s.after.main}
-                </div>
-                <div>
-                  Food: {s.before.food} → {s.after.food}
-                </div>
-                <div>
-                  Squirrels: {s.before.squirrels} → {s.after.squirrels}
-                </div>
-              </div>
-            )}
+            <b>{l.step}</b> — {l.detail}
           </div>
         ))}
       </div>
 
-      {/* --- Final --- */}
+      {/* STATE */}
       <div style={{ marginTop: 20 }}>
-        <h2>Final Result</h2>
+        <h3>Final State</h3>
         <p>Main: {state.main}</p>
         <p>Food: {state.food}</p>
-        <p>Squirrels: {state.squirrels}</p>
+        <p>Clue: {state.clue}</p>
+        <p>Treasure: {state.treasure}</p>
+        <p>Squirrels: {state.squirrel}</p>
       </div>
     </div>
   );
