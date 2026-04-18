@@ -21,7 +21,7 @@ const CARD_LOGIC = {
   "Peregrin Took": (state) => {
     state.food += 1;
     return state;
-  }
+  },
 };
 
 // --- Scryfall fetch ---
@@ -81,14 +81,14 @@ export default function TokenApp() {
     let state = {
       main: baseTokens,
       food: 0,
-      squirrels: 0
+      squirrels: 0,
     };
 
     let steps = [];
 
     steps.push({
       label: "Base",
-      state: { ...state }
+      state: { ...state },
     });
 
     battlefield.forEach((card) => {
@@ -101,7 +101,7 @@ export default function TokenApp() {
       steps.push({
         label: card,
         before,
-        after: { ...state }
+        after: { ...state },
       });
     });
 
@@ -175,9 +175,7 @@ export default function TokenApp() {
         {steps.map((s, i) => (
           <div key={i}>
             {s.label === "Base" ? (
-              <strong>
-                Start → {s.state.main} main tokens
-              </strong>
+              <strong>Start → {s.state.main} main tokens</strong>
             ) : (
               <div>
                 <strong>{s.label}</strong>
